@@ -1,0 +1,73 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AI Query Interface</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 20px;
+        }
+        #query-form {
+            margin-bottom: 20px;
+        }
+        #query {
+            width: 100%;
+            padding: 10px;
+            margin-top: 10px;
+            font-size: 16px;
+        }
+        #submit-btn {
+            padding: 10px 20px;
+            font-size: 16px;
+            cursor: pointer;
+        }
+        #response {
+            margin-top: 20px;
+            padding: 10px;
+            border: 1px solid #ccc;
+            background-color: #f9f9f9;
+        }
+    </style>
+</head>
+<body>
+
+<h2>AI Query Interface</h2>
+<form id="query-form">
+    <label for="query">Ask your question:</label><br>
+    <input type="text" id="query" name="query" placeholder="Type your question here..." required>
+    <button type="submit" id="submit-btn">Submit</button>
+</form>
+
+<div id="response">
+    <strong>AI Response:</strong>
+    <p id="response-text">Waiting for your question...</p>
+</div>
+
+<script>
+    document.getElementById('query-form').addEventListener('submit', async function(event) {
+        event.preventDefault();
+        
+        const query = document.getElementById('query').value;
+        document.getElementById('response-text').textContent = 'Processing your query...';
+        
+        try {
+            const response = await fetch('YOUR_BACKEND_API_URL', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({ question: query })
+            });
+            
+            const data = await response.json();
+            document.getElementById('response-text').textContent = data.answer;
+        } catch (error) {
+            document.getElementById('response-text').textContent = 'An error occurred while processing your request.';
+        }
+    });
+</script>
+
+</body>
+</html>
