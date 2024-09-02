@@ -15,14 +15,15 @@
     "express",
     "mongodb"
   ],
-  "author": "Your Name",
+  "author": "Austin McGuffie",
   "license": "ISC",
   "dependencies": {
     "cors": "^2.8.5",
     "dotenv": "^10.0.0",
     "express": "^4.17.1",
     "mongoose": "^6.0.12",
-    "node-fetch": "^3.2.0"
+    "node-fetch": "^2.6.1",
+    "openai": "^3.1.0"
   },
   "devDependencies": {
     "nodemon": "^2.0.15"
