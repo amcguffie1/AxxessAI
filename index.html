@@ -53,21 +53,7 @@
         document.getElementById('response-text').textContent = 'Processing your query...';
         
         try {
-            const response = await fetch('https://axxess-ai.herokuapp.com/api/query', {
+            const response = await fetch('https://axxess-ai-64eabfb90f4d.herokuapp.com/api/query', {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json'
-                },
-                body: JSON.stringify({ question: query })
-            });
-            
-            const data = await response.json();
-            document.getElementById('response-text').textContent = data.answer || 'No response received.';
-        } catch (error) {
-            document.getElementById('response-text').textContent = 'An error occurred while processing your request.';
-        }
-    });
-</script>
-
-</body>
-</html>
