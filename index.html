@@ -57,3 +57,27 @@
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({ question: query })
+            });
+            
+            // Log the raw response for debugging purposes
+            console.log('Response:', response);
+
+            // Convert the response to JSON
+            const data = await response.json();
+            console.log('Data received:', data);
+
+            // Display the response or a fallback message
+            document.getElementById('response-text').textContent = data.answer || 'No response received.';
+        } catch (error) {
+            // Log the error for debugging
+            console.error('Error:', error);
+
+            document.getElementById('response-text').textContent = 'An error occurred while processing your request.';
+        }
+    });
+</script>
+
+</body>
+</html>
