@@ -7,7 +7,6 @@ const app = express();
 app.use(express.json());
 app.use(cors());
 
-
 // Dynamically import node-fetch
 const fetchAPI = (...args) => import('node-fetch').then(({default: fetch}) => fetch(...args));
 
@@ -35,6 +34,14 @@ const documentSchema = new mongoose.Schema({
 });
 
 const Document = axxessDB.model('Document', documentSchema, 'Sonder Health Plan');
+
+// **GET Route for the Home Page**
+app.get('/', (req, res) => {
+    res.send('Axxess AI Backend is running!');
+});
+
+// **GET Route to handle favicon.ico requests**
+app.get('/favicon.ico', (req, res) => res.status(204));
 
 // **GET Route for Testing the API**
 app.get('/api/test', (req, res) => {
