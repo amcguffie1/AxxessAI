@@ -49,9 +49,6 @@
     document.getElementById('query-form').addEventListener('submit', async function(event) {
         event.preventDefault();
 
-        // Simple alert to check if form submission is working
-        alert('Form submitted!');
-
         const query = document.getElementById('query').value;
         document.getElementById('response-text').textContent = 'Processing your query...';
 
@@ -64,20 +61,22 @@
                 body: JSON.stringify({ question: query })
             });
 
-            // Log the raw response for debugging purposes
-            console.log('Response:', response);
-
             // Convert the response to JSON
             const data = await response.json();
-            console.log('Data received:', data);
 
-            // Display the response or a fallback message
-            document.getElementById('response-text').textContent = data.answer || 'No response received.';
+            // Use a more conversational and human-friendly response if available
+            const answer = data.answer || "I’m sorry, I couldn’t find an exact answer for your question. Can you try asking in a different way?";
+            
+            // Update the text to make it more conversational
+            const humanResponse = `Based on what I found, here’s the information: ${answer}`;
+
+            // Display the response
+            document.getElementById('response-text').textContent = humanResponse;
         } catch (error) {
-            // Log the error for debugging
+            // Handle the error by logging it
             console.error('Error:', error);
 
-            document.getElementById('response-text').textContent = 'An error occurred while processing your request.';
+            document.getElementById('response-text').textContent = 'Something went wrong while processing your request. Please try again later.';
         }
     });
 </script>
