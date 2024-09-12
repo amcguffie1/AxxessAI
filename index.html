@@ -61,22 +61,27 @@
                 body: JSON.stringify({ question: query })
             });
 
-            // Convert the response to JSON
             const data = await response.json();
 
-            // Use a more conversational and human-friendly response if available
-            const answer = data.answer || "I’m sorry, I couldn’t find an exact answer for your question. Can you try asking in a different way?";
-            
-            // Update the text to make it more conversational
-            const humanResponse = `Based on what I found, here’s the information: ${answer}`;
+            // Handle the response dynamically, either the AI's answer or a fallback
+            let humanResponse;
 
-            // Display the response
+            if (data.answer) {
+                humanResponse = data.answer;  // Directly present the AI's response without extra phrasing
+            } else {
+                // Use a random fallback response to avoid repetition
+                const fallbackResponses = [
+                    "I couldn’t find an exact answer for that. Can you try rephrasing?",
+                    "It looks like I don’t have enough information. Can you ask another way?",
+                    "I'm not sure I have the right info. Would you mind trying another question?"
+                ];
+                humanResponse = fallbackResponses[Math.floor(Math.random() * fallbackResponses.length)];
+            }
+
             document.getElementById('response-text').textContent = humanResponse;
         } catch (error) {
-            // Handle the error by logging it
             console.error('Error:', error);
-
-            document.getElementById('response-text').textContent = 'Something went wrong while processing your request. Please try again later.';
+            document.getElementById('response-text').textContent = 'An error occurred while processing your request. Please try again later.';
         }
     });
 </script>
