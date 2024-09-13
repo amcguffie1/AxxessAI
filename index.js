@@ -83,10 +83,18 @@ app.post('/api/query', async (req, res) => {
     try {
         console.log("Normalized question:", question);
 
+        // Check if the question is formulary-related
+        const isFormularyQuestion = question.toLowerCase().includes('formulary') || question.toLowerCase().includes('drug') || question.toLowerCase().includes('medication');
+
         // Fetch relevant documents from MongoDB collection
         console.log("Querying MongoDB for relevant documents...");
         let documents = await Document.find(
-            { $text: { $search: question } },
+            isFormularyQuestion 
+                ? { $or: [
+                    { $text: { $search: question } },
+                    { Title: { $regex: /formulary/i } }
+                  ]}
+                : { $text: { $search: question } },
             { score: { $meta: "textScore" } }
         ).sort({ score: { $meta: "textScore" } }).limit(5);
 
@@ -108,7 +116,11 @@ app.post('/api/query', async (req, res) => {
         }
 
         if (documents.length > 0) {
-            console.log("First document structure:", JSON.stringify(documents[0], null, 2));
+            console.log("Retrieved documents:");
+            documents.forEach((doc, index) => {
+                console.log(`Document ${index + 1} Title:`, doc.Title);
+                console.log(`Document ${index + 1} Content Preview:`, JSON.stringify(doc.content).substring(0, 200) + '...');
+            });
         }
 
         if (!documents || documents.length === 0) {
@@ -119,7 +131,7 @@ app.post('/api/query', async (req, res) => {
         console.log(`Relevant documents retrieved: ${documents.length}`);
 
         // Combine relevant documents into chunks
-        let combinedContent = documents.map(doc => doc.content.full_text || JSON.stringify(doc.content)).join('\n');
+        let combinedContent = documents.map(doc => `Title: ${doc.Title}\n${doc.content.full_text || JSON.stringify(doc.content)}`).join('\n\n');
         const chunks = chunkText(combinedContent, TOKEN_LIMIT);
         console.log(`Created ${chunks.length} chunks of content`);
 
@@ -137,7 +149,7 @@ app.post('/api/query', async (req, res) => {
             body: JSON.stringify({
                 model: 'gpt-3.5-turbo',
                 messages: [
-                    { role: 'system', content: "You are an AI assistant that has access to Medicare Advantage plan documents. Answer confidently, but if there isn't enough information from the user's query, ask for clarification and use context clues to guide the conversation." },
+                    { role: 'system', content: "You are an AI assistant that has access to Medicare Advantage plan documents, including formularies. Answer questions about drug coverage and tiers based on the provided information. If the specific information isn't available, say so and suggest where to find it." },
                     { role: 'user', content: `Here is the relevant content from the documents: ${contentForQuery}` },
                     { role: 'user', content: `Answer the following question: ${question}` }
                 ]
