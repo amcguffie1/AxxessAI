@@ -13,8 +13,20 @@ const mongoURI = process.env.MONGO_URI || 'mongodb+srv://austin:yt469t9RPA55JZTx
 
 console.log("Attempting to connect to MongoDB...");
 mongoose.connect(mongoURI, { useNewUrlParser: true, useUnifiedTopology: true })
-    .then(() => console.log("Connected to MongoDB"))
-    .catch(err => console.error("MongoDB connection error:", err));
+    .then(() => {
+        console.log("Connected to MongoDB");
+        // Check for existing indexes
+        return Document.collection.getIndexes();
+    })
+    .then(indexes => {
+        console.log("Existing indexes:", JSON.stringify(indexes, null, 2));
+        // If the text index doesn't exist, create it
+        if (!indexes['content.full_text_text_Title_text']) {
+            return Document.collection.createIndex({ 'content.full_text': 'text', 'Title': 'text' });
+        }
+    })
+    .then(() => console.log("Text index verified/created"))
+    .catch(err => console.error("MongoDB connection or index error:", err));
 
 // Define the document schema and collection
 const documentSchema = new mongoose.Schema({
@@ -60,10 +72,23 @@ app.post('/api/query', async (req, res) => {
 
         // Fetch relevant documents from MongoDB collection
         console.log("Querying MongoDB for relevant documents...");
-        const documents = await Document.find(
+        let documents = await Document.find(
             { $text: { $search: question } },
             { score: { $meta: "textScore" } }
         ).sort({ score: { $meta: "textScore" } }).limit(5);
+
+        if (documents.length === 0) {
+            console.log("No exact matches found. Trying a more lenient search...");
+            const keywords = question.split(' ').filter(word => word.length > 3);
+            const regexPatterns = keywords.map(keyword => new RegExp(keyword, 'i'));
+            
+            documents = await Document.find({
+                $or: [
+                    { Title: { $in: regexPatterns } },
+                    { 'content.full_text': { $in: regexPatterns } }
+                ]
+            }).limit(5);
+        }
 
         if (!documents || documents.length === 0) {
             console.log("No relevant documents found in the database.");
@@ -71,6 +96,10 @@ app.post('/api/query', async (req, res) => {
         }
 
         console.log(`Relevant documents retrieved: ${documents.length}`);
+
+        if (documents.length > 0) {
+            console.log("First document structure:", JSON.stringify(documents[0], null, 2));
+        }
 
         // Combine relevant documents into chunks
         let combinedContent = documents.map(doc => doc.content.full_text || doc.content).join('\n');
