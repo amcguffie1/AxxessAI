@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>AI Query Interface</title>
+    <title>Axxess AI Query Interface</title>
     <!-- Google Fonts -->
     <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@400;500;700&display=swap" rel="stylesheet">
     <style>
@@ -11,7 +11,7 @@
             font-family: 'Roboto', sans-serif;
             margin: 0;
             padding: 0;
-            background: linear-gradient(to right, #74ebd5, #acb6e5);
+            background: linear-gradient(to right, #fff, #f5f5f5);
             display: flex;
             justify-content: center;
             align-items: center;
@@ -26,13 +26,13 @@
             box-shadow: 0 4px 10px rgba(0, 0, 0, 0.1);
             width: 100%;
             max-width: 600px;
+            text-align: center;
         }
 
         h2 {
-            text-align: center;
             font-weight: 700;
             margin-bottom: 20px;
-            color: #333;
+            color: #c00;
         }
 
         form {
@@ -50,12 +50,12 @@
         }
 
         input[type="text"]:focus {
-            border-color: #74ebd5;
+            border-color: #c00;
             outline: none;
         }
 
         button {
-            background-color: #74ebd5;
+            background-color: #c00;
             color: white;
             border: none;
             padding: 15px;
@@ -67,7 +67,7 @@
         }
 
         button:hover {
-            background-color: #4ecdc4;
+            background-color: #a00;
         }
 
         #response {
@@ -77,12 +77,19 @@
             border-radius: 8px;
             font-size: 16px;
             line-height: 1.5;
+            color: #333;
+        }
+
+        img {
+            width: 150px;
+            margin-bottom: 20px;
         }
     </style>
 </head>
 <body>
     <div class="container">
-        <h2>AI Query Interface</h2>
+        <img src="https://github.com/amcguffie1/AxxessAI/blob/90751a70427d7fa10b6adfb1c6d2b20c72a4dafa/Logo%20Icon.png?raw=true" alt="Axxess Logo">
+        <h2>Axxess AI Query Interface</h2>
         <form id="query-form" action="#" method="POST">
             <input type="text" id="query" placeholder="Type your question here..." required>
             <button type="submit">Submit</button>
