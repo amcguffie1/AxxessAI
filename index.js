@@ -39,26 +39,6 @@ documentSchema.index({ 'content.full_text': 'text', 'Title': 'text' });
 
 const Document = mongoose.model('Document', documentSchema, 'MA Plans 2024'); // Explicitly set the collection name
 
-// Helper function to chunk text
-const TOKEN_LIMIT = 4000; // Approximate token limit, leaving room for the system message and user question
-
-function chunkText(text, maxLength) {
-    const chunks = [];
-    let chunk = '';
-    const sentences = text.split(/(?<=[.!?])\s+/);
-    
-    for (let sentence of sentences) {
-        if ((chunk + sentence).length <= maxLength) {
-            chunk += sentence + ' ';
-        } else {
-            chunks.push(chunk.trim());
-            chunk = sentence + ' ';
-        }
-    }
-    if (chunk) chunks.push(chunk.trim());
-    return chunks;
-}
-
 // Initialize Express app
 const app = express();
 app.use(cors());
@@ -81,63 +61,53 @@ app.post('/api/query', async (req, res) => {
     const { question } = req.body;
 
     try {
-        console.log("Normalized question:", question);
+        console.log("Received question:", question);
 
-        // Check if the question is formulary-related
-        const isFormularyQuestion = question.toLowerCase().includes('formulary') || question.toLowerCase().includes('drug') || question.toLowerCase().includes('medication');
+        // Enhance search terms
+        const searchTerms = question.toLowerCase().split(' ')
+            .filter(word => word.length > 2)
+            .join(' ');
+        
+        console.log("Search terms:", searchTerms);
 
         // Fetch relevant documents from MongoDB collection
-        console.log("Querying MongoDB for relevant documents...");
         let documents = await Document.find(
-            isFormularyQuestion 
-                ? { $or: [
-                    { $text: { $search: question } },
-                    { Title: { $regex: /formulary/i } }
-                  ]}
-                : { $text: { $search: question } },
+            { $text: { $search: searchTerms } },
             { score: { $meta: "textScore" } }
-        ).sort({ score: { $meta: "textScore" } }).limit(5);
-
-        console.log("Text search results:", documents.length);
+        ).sort({ score: { $meta: "textScore" } }).limit(10);  // Increased limit
 
         if (documents.length === 0) {
             console.log("No exact matches found. Trying a more lenient search...");
-            const keywords = question.split(' ').filter(word => word.length > 2);
-            const regexPatterns = keywords.map(keyword => new RegExp(keyword, 'i'));
+            const regexPatterns = searchTerms.split(' ').map(term => new RegExp(term, 'i'));
             
             documents = await Document.find({
                 $or: [
                     { Title: { $in: regexPatterns } },
                     { 'content': { $in: regexPatterns } }
                 ]
-            }).limit(5);
-
-            console.log("Lenient search results:", documents.length);
+            }).limit(10);
         }
 
-        if (documents.length > 0) {
-            console.log("Retrieved documents:");
-            documents.forEach((doc, index) => {
-                console.log(`Document ${index + 1} Title:`, doc.Title);
-                console.log(`Document ${index + 1} Content Preview:`, JSON.stringify(doc.content).substring(0, 200) + '...');
-            });
+        console.log(`Retrieved ${documents.length} documents`);
+        documents.forEach((doc, index) => {
+            console.log(`Document ${index + 1} Title: ${doc.Title}`);
+            console.log(`Document ${index + 1} Content Preview: ${JSON.stringify(doc.content).substring(0, 200)}...`);
+        });
+
+        if (documents.length === 0) {
+            return res.status(404).json({ success: false, message: 'No relevant documents found in the database.' });
         }
 
-        if (!documents || documents.length === 0) {
-            console.log("No relevant documents found in the database.");
-            return res.status(404).json({ success: false, message: 'No relevant documents available in the database.' });
+        // Combine relevant documents into a single text
+        let combinedContent = documents.map(doc => `Title: ${doc.Title}\n${JSON.stringify(doc.content)}`).join('\n\n');
+        
+        // Truncate combined content to 15,000 characters if it's longer
+        if (combinedContent.length > 15000) {
+            console.log("Combined content exceeds 15,000 characters. Truncating...");
+            combinedContent = combinedContent.substring(0, 15000);
         }
-
-        console.log(`Relevant documents retrieved: ${documents.length}`);
-
-        // Combine relevant documents into chunks
-        let combinedContent = documents.map(doc => `Title: ${doc.Title}\n${doc.content.full_text || JSON.stringify(doc.content)}`).join('\n\n');
-        const chunks = chunkText(combinedContent, TOKEN_LIMIT);
-        console.log(`Created ${chunks.length} chunks of content`);
-
-        // Use the first chunk (most relevant) for the OpenAI query
-        const contentForQuery = chunks[0];
-        console.log("Content length for OpenAI API:", contentForQuery.length);
+        
+        console.log("Combined content length:", combinedContent.length);
 
         // Prepare the request to OpenAI API
         const response = await fetch('https://api.openai.com/v1/chat/completions', {
@@ -149,8 +119,8 @@ app.post('/api/query', async (req, res) => {
             body: JSON.stringify({
                 model: 'gpt-3.5-turbo',
                 messages: [
-                    { role: 'system', content: "You are an AI assistant that has access to Medicare Advantage plan documents, including formularies. Answer questions about drug coverage and tiers based on the provided information. If the specific information isn't available, say so and suggest where to find it." },
-                    { role: 'user', content: `Here is the relevant content from the documents: ${contentForQuery}` },
+                    { role: 'system', content: "You are an AI assistant that has access to Medicare Advantage plan documents. Answer questions based on the provided information. If the specific information isn't available in the given context, say so clearly." },
+                    { role: 'user', content: `Here is the relevant content from the documents: ${combinedContent}` },
                     { role: 'user', content: `Answer the following question: ${question}` }
                 ]
             })
