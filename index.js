@@ -1,90 +1,82 @@
+require('dotenv').config();
 const express = require('express');
 const mongoose = require('mongoose');
-const fetch = require('node-fetch');
-const dotenv = require('dotenv');
+const cors = require('cors');
+const { Configuration, OpenAIApi } = require('openai');
 
-dotenv.config();
-
+// Set up Express
 const app = express();
-app.use(express.json());  // Middleware to parse JSON
+app.use(express.json());
+app.use(cors());
 
-// MongoDB connection
-const mongoURI = 'mongodb+srv://austin:yt469t9RPA55JZTx@cluster1.kzl6h.mongodb.net/Axxess_AI?retryWrites=true&w=majority';
+// MongoDB connection URI (correct one provided)
+const mongoURI = 'mongodb+srv://austin:yt469t9RPA55JZTx@cluster1.kzl6h.mongodb.net/Axxess_AI?retryWrites=true&w=majority&appName=Cluster1';
+const dbName = 'Axxess_AI';
+const collectionName = 'MA Plans 2024';
+
 mongoose.connect(mongoURI, { useNewUrlParser: true, useUnifiedTopology: true })
-    .then(() => console.log('Connected to MongoDB'))
-    .catch(err => console.error('MongoDB connection error:', err));
+  .then(() => console.log('Connected to MongoDB'))
+  .catch(err => console.error('MongoDB connection error:', err));
 
-// Define the document schema
-const documentSchema = new mongoose.Schema({ 
-    title: String, 
-    content: String 
-});
+// Mongoose schema and model for documents
+const documentSchema = new mongoose.Schema({
+  title: String,
+  content: String
+}, { collection: collectionName });
+
 const Document = mongoose.model('Document', documentSchema);
 
-// POST API for querying AI with relevant document content
+// OpenAI API configuration
+const configuration = new Configuration({
+  apiKey: process.env.OPENAI_API_KEY,
+});
+const openai = new OpenAIApi(configuration);
+
+// POST /api/query
 app.post('/api/query', async (req, res) => {
-    const { question } = req.body;
-    try {
-        console.log(`Searching for documents relevant to: ${question}`);
-        
-        // Search MongoDB for multiple documents related to the user's query
-        const relevantDocs = await Document.find({
-            $or: [
-                { content: { $regex: question, $options: 'i' } },
-                { title: { $regex: question, $options: 'i' } }
-            ]
-        }).limit(3);  // Fetch the top 3 most relevant documents
+  const { question } = req.body;
+  if (!question) {
+    return res.status(400).json({ success: false, message: 'No question provided.' });
+  }
 
-        if (relevantDocs.length === 0) {
-            return res.status(404).json({ success: false, message: 'No relevant documents found in the database.' });
-        }
+  console.log(`Normalized question: ${question}`);
 
-        // Combine the content of the top 3 relevant documents
-        let combinedContent = relevantDocs.map(doc => doc.content).join('\n\n');
+  try {
+    // Find relevant documents from MongoDB
+    console.log('Querying MongoDB for documents...');
+    const relevantDocs = await Document.find({
+      $or: [
+        { content: { $regex: question, $options: 'i' } },
+        { title: { $regex: question, $options: 'i' } }
+      ]
+    }).limit(3);
 
-        // Truncate combined content if it's too long for OpenAI
-        const maxLength = 4000;  // Adjust this based on OpenAI token limits
-        if (combinedContent.length > maxLength) {
-            combinedContent = combinedContent.substring(0, maxLength);
-        }
+    console.log('Documents retrieved:', relevantDocs);
 
-        // Log combined content length for debugging
-        console.log(`Combined content length: ${combinedContent.length}`);
-
-        // Prepare the request to OpenAI
-        const response = await fetch('https://api.openai.com/v1/chat/completions', {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-                'Authorization': `Bearer ${process.env.OPENAI_API_KEY}`,
-            },
-            body: JSON.stringify({
-                model: 'gpt-3.5-turbo',
-                messages: [
-                    { role: 'system', content: 'You are an AI assistant that provides answers about Medicare Advantage plans.' },
-                    { role: 'user', content: `Here is the combined content of relevant documents: ${combinedContent}. Please answer the following question: ${question}` }
-                ]
-            })
-        });
-
-        const data = await response.json();
-        const aiAnswer = data.choices[0]?.message?.content;
-
-        if (!aiAnswer) {
-            return res.status(500).json({ success: false, message: 'AI did not return a response' });
-        }
-
-        // Return the AI response
-        res.json({ success: true, answer: aiAnswer });
-
-    } catch (error) {
-        console.error('Error processing query:', error);
-        res.status(500).json({ success: false, message: 'Error processing query' });
+    if (relevantDocs.length === 0) {
+      return res.status(404).json({ success: false, message: 'No relevant documents found in the database.' });
     }
+
+    // Combine document contents
+    const combinedContent = relevantDocs.map(doc => doc.content).join('\n');
+
+    // Send query to OpenAI
+    const completion = await openai.createCompletion({
+      model: 'text-davinci-003',
+      prompt: `${question}\n\nBased on the following document(s):\n${combinedContent}`,
+      max_tokens: 200,
+    });
+
+    const answer = completion.data.choices[0].text.trim();
+    return res.json({ success: true, answer });
+  } catch (error) {
+    console.error('Error processing query:', error);
+    return res.status(500).json({ success: false, message: 'Error processing query.' });
+  }
 });
 
 // Start the server
-const port = process.env.PORT || 3000;
-app.listen(port, () => {
-    console.log(`Server running on port ${port}`);
+const PORT = process.env.PORT || 3000;
+app.listen(PORT, () => {
+  console.log(`Server running on port ${PORT}`);
 });
