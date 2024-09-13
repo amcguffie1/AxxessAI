@@ -5,6 +5,9 @@ const dotenv = require('dotenv');
 
 dotenv.config();
 
+const app = express();
+app.use(express.json());  // Middleware to parse JSON
+
 // MongoDB connection
 const mongoURI = 'mongodb+srv://austin:yt469t9RPA55JZTx@cluster1.kzl6h.mongodb.net/Axxess_AI?retryWrites=true&w=majority';
 mongoose.connect(mongoURI, { useNewUrlParser: true, useUnifiedTopology: true })
@@ -22,8 +25,9 @@ const Document = mongoose.model('Document', documentSchema);
 app.post('/api/query', async (req, res) => {
     const { question } = req.body;
     try {
-        // Search MongoDB for multiple documents related to the user's query
         console.log(`Searching for documents relevant to: ${question}`);
+        
+        // Search MongoDB for multiple documents related to the user's query
         const relevantDocs = await Document.find({
             $or: [
                 { content: { $regex: question, $options: 'i' } },
@@ -36,7 +40,16 @@ app.post('/api/query', async (req, res) => {
         }
 
         // Combine the content of the top 3 relevant documents
-        const combinedContent = relevantDocs.map(doc => doc.content).join('\n\n');
+        let combinedContent = relevantDocs.map(doc => doc.content).join('\n\n');
+
+        // Truncate combined content if it's too long for OpenAI
+        const maxLength = 4000;  // Adjust this based on OpenAI token limits
+        if (combinedContent.length > maxLength) {
+            combinedContent = combinedContent.substring(0, maxLength);
+        }
+
+        // Log combined content length for debugging
+        console.log(`Combined content length: ${combinedContent.length}`);
 
         // Prepare the request to OpenAI
         const response = await fetch('https://api.openai.com/v1/chat/completions', {
