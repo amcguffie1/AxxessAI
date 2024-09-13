@@ -59,11 +59,24 @@ function chunkText(text, maxLength) {
     return chunks;
 }
 
-// POST API for querying AI with MongoDB and OpenAI
+// Initialize Express app
 const app = express();
 app.use(cors());
 app.use(express.json());
 
+// Route to fetch sample documents
+app.get('/api/sample-documents', async (req, res) => {
+    try {
+        const sampleDocuments = await Document.find().limit(2);
+        console.log("Sample documents:", JSON.stringify(sampleDocuments, null, 2));
+        res.json({ success: true, sampleDocuments });
+    } catch (error) {
+        console.error("Error fetching sample documents:", error);
+        res.status(500).json({ success: false, message: 'Error fetching sample documents' });
+    }
+});
+
+// Main query route
 app.post('/api/query', async (req, res) => {
     const { question } = req.body;
 
@@ -77,17 +90,25 @@ app.post('/api/query', async (req, res) => {
             { score: { $meta: "textScore" } }
         ).sort({ score: { $meta: "textScore" } }).limit(5);
 
+        console.log("Text search results:", documents.length);
+
         if (documents.length === 0) {
             console.log("No exact matches found. Trying a more lenient search...");
-            const keywords = question.split(' ').filter(word => word.length > 3);
+            const keywords = question.split(' ').filter(word => word.length > 2);
             const regexPatterns = keywords.map(keyword => new RegExp(keyword, 'i'));
             
             documents = await Document.find({
                 $or: [
                     { Title: { $in: regexPatterns } },
-                    { 'content.full_text': { $in: regexPatterns } }
+                    { 'content': { $in: regexPatterns } }
                 ]
             }).limit(5);
+
+            console.log("Lenient search results:", documents.length);
+        }
+
+        if (documents.length > 0) {
+            console.log("First document structure:", JSON.stringify(documents[0], null, 2));
         }
 
         if (!documents || documents.length === 0) {
@@ -97,12 +118,8 @@ app.post('/api/query', async (req, res) => {
 
         console.log(`Relevant documents retrieved: ${documents.length}`);
 
-        if (documents.length > 0) {
-            console.log("First document structure:", JSON.stringify(documents[0], null, 2));
-        }
-
         // Combine relevant documents into chunks
-        let combinedContent = documents.map(doc => doc.content.full_text || doc.content).join('\n');
+        let combinedContent = documents.map(doc => doc.content.full_text || JSON.stringify(doc.content)).join('\n');
         const chunks = chunkText(combinedContent, TOKEN_LIMIT);
         console.log(`Created ${chunks.length} chunks of content`);
 
