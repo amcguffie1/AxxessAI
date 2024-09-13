@@ -13,7 +13,7 @@ app.use(cors());
 app.use(express.json());
 
 // MongoDB connection
-const mongoURI = 'mongodb+srv://austin:yt469t9RPA55JZTx@cluster1.kzl6h.mongodb.net/?retryWrites=true&w=majority';
+const mongoURI = 'mongodb+srv://austin:yt469t9RPA55JZTx@cluster1.kzl6h.mongodb.net/?retryWrites=true&w=majority&appName=Cluster1';
 console.log("Attempting to connect to MongoDB...");
 mongoose.connect(mongoURI, {
     useNewUrlParser: true,
@@ -41,14 +41,24 @@ app.post('/api/query', async (req, res) => {
     const { question } = req.body;
 
     try {
+        // Log message for debugging
+        console.log('Querying MongoDB for documents...');
+
         // Fetch all documents from MongoDB
         const documents = await Document.find({});
+
+        // Log the retrieved documents for debugging
+        console.log('Documents retrieved:', documents);
+
         if (!documents || documents.length === 0) {
             return res.status(404).json({ success: false, message: 'No documents available in the database.' });
         }
 
         // Combine the content of all documents
         const combinedContent = documents.map(doc => doc.content).join('\n');
+        
+        // Log combined content for debugging
+        console.log('Combined content:', combinedContent);
 
         // Prepare the request to OpenAI with context consideration
         const response = await fetch('https://api.openai.com/v1/chat/completions', {
