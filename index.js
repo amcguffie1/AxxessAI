@@ -1,137 +1,92 @@
+// Import necessary modules
 const express = require('express');
 const mongoose = require('mongoose');
 const cors = require('cors');
-require('dotenv').config();
+const fetch = require('node-fetch');
+const dotenv = require('dotenv');
 
+// Initialize environment variables
+dotenv.config();
+
+// Create the app
 const app = express();
-app.use(express.json());
 app.use(cors());
+app.use(express.json());
 
-// Dynamically import node-fetch
-const fetchAPI = (...args) => import('node-fetch').then(({default: fetch}) => fetch(...args));
-
-// **MongoDB connection logging**
+// MongoDB connection
+const mongoURI = process.env.MONGO_URI;
 console.log("Attempting to connect to MongoDB...");
-mongoose.connect(process.env.MONGODB_URI, {
-    useNewUrlParser: true,
-    useUnifiedTopology: true
-})
-.then(() => {
-    console.log("MongoDB connection established");
-})
-.catch(err => {
-    console.error("MongoDB connection error:", err);
-    process.exit(1); // Exit the app if the database connection fails
-});
+mongoose.connect(mongoURI, { useNewUrlParser: true, useUnifiedTopology: true })
+    .then(() => console.log("Connected to MongoDB"))
+    .catch(err => console.error("MongoDB connection error:", err));
 
-// Confirm which database is connected
-const db = mongoose.connection;
-db.once('open', function() {
-    console.log('Current database:', mongoose.connection.db.databaseName);
-});
-
-// Explicitly select the Axxess_AI database
-const dbName = 'Axxess_AI';
-const axxessDB = mongoose.connection.useDb(dbName);
-
-// Define the document schema and model
+// Define the document schema
 const documentSchema = new mongoose.Schema({
     title: String,
-    content: String // Adjust this if the content is an object
+    content: String
 });
 
-const Document = axxessDB.model('Document', documentSchema, 'Sonder Health Plan');
+// Create the document model
+const Document = mongoose.model('Document', documentSchema);
 
-// **Root Route logging**
-app.get('/', (req, res) => {
-    console.log("Received request to '/' route");
-    res.send('Axxess AI Backend is running!');
-});
-
-// **Favicon request handling logging**
-app.get('/favicon.ico', (req, res) => {
-    console.log("Received request for favicon");
-    res.status(204);
-});
-
-// **GET Route logging for API test**
-app.get('/api/test', (req, res) => {
-    console.log("Received request to '/api/test'");
-    res.send('API is working!');
-});
-
-// **GET Route to list all documents in MongoDB**
-app.get('/api/documents', async (req, res) => {
-    try {
-        console.log("Received request to fetch documents");
-        const documents = await Document.find({});
-        console.log("Documents retrieved:", documents);
-        res.json({ success: true, documents });
-    } catch (error) {
-        console.error("Error fetching documents:", error);
-        res.status(500).json({ success: false, message: 'An error occurred while fetching documents' });
-    }
-});
-
-// **POST Route for AI queries**
+// POST API for querying AI with flexibility for all documents and context
 app.post('/api/query', async (req, res) => {
-    const { title, question } = req.body;
+    const { question } = req.body;
 
     try {
-        console.log("Received AI query request");
-        console.log("Query for document title:", title);
-        console.log("User question:", question);
-
-        // Fetch the document from MongoDB
-        const document = await Document.findOne({ title });
-        if (!document) {
-            console.log("Document not found:", title);
-            return res.json({ success: false, message: 'Document not found' });
+        // Fetch all documents from MongoDB
+        const documents = await Document.find({});
+        if (!documents || documents.length === 0) {
+            return res.status(404).json({ success: false, message: 'No documents available in the database.' });
         }
 
-        console.log("Document retrieved:", document);
+        // Combine the content of all documents
+        const combinedContent = documents.map(doc => doc.content).join('\n');
 
-        // Prepare the request to OpenAI
-        const messages = [
-            { role: 'system', content: 'You are an AI assistant specializing in Medicare Advantage plans. Use the provided document to answer the question.' },
-            { role: 'user', content: `Document: ${document.content}` },
-            { role: 'user', content: `Question: ${question}` }
-        ];
-
-        console.log("Sending request to OpenAI with messages:", messages);
-
-        // Call OpenAI API
-        const response = await fetchAPI('https://api.openai.com/v1/chat/completions', {
+        // Prepare the request to OpenAI with context consideration and clarification prompts
+        const response = await fetch('https://api.openai.com/v1/chat/completions', {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json',
                 'Authorization': `Bearer ${process.env.OPENAI_API_KEY}`
             },
             body: JSON.stringify({
-                model: 'gpt-4',
-                messages: messages
+                model: "gpt-3.5-turbo",
+                messages: [
+                    {
+                        role: "system",
+                        content: "You are an AI assistant that has access to Medicare Advantage plan documents. Answer confidently, but if there isn't enough information from the user's query, ask for clarification and use context clues to guide the conversation."
+                    },
+                    {
+                        role: "system",
+                        content: `Here is the combined content from all available plan documents: ${combinedContent}`
+                    },
+                    {
+                        role: "user",
+                        content: `Answer the following question: ${question}`
+                    }
+                ]
             })
         });
 
         const data = await response.json();
-        console.log("Received response from OpenAI:", data);
+        const aiAnswer = data.choices[0]?.message?.content;
 
-        if (!data.choices || data.choices.length === 0) {
-            console.log("No choices in OpenAI response");
-            return res.json({ success: false, message: 'No answer received from AI' });
+        if (!aiAnswer) {
+            return res.status(500).json({ success: false, message: 'AI did not return a response' });
         }
 
-        res.json({ success: true, answer: data.choices[0].message.content });
+        // Return the AI response
+        res.json({ success: true, answer: aiAnswer });
+
     } catch (error) {
-        console.error("Error processing AI query:", error);
-        res.status(500).json({ success: false, message: 'An error occurred while processing your request' });
+        console.error('Error processing query:', error);
+        res.status(500).json({ success: false, message: 'An error occurred while processing your request.' });
     }
 });
 
-// **Server startup logging**
-const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => {
-    console.log(`Server running on port ${PORT}`);
-}).on('error', (err) => {
-    console.error('Failed to start server:', err);
+// Start the server
+const port = process.env.PORT || 3000;
+app.listen(port, () => {
+    console.log(`Server running on port ${port}`);
 });
