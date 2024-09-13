@@ -48,6 +48,7 @@ app.post('/api/query', async (req, res) => {
 
         // Combine all documents into a single text block for the OpenAI query
         const combinedContent = documents.map(doc => doc.content.full_text || doc.content).join('\n');
+        console.log("Combined content length:", combinedContent.length);
         console.log("Combined content ready for OpenAI API.");
 
         // Prepare the request to OpenAI API
@@ -67,12 +68,19 @@ app.post('/api/query', async (req, res) => {
             })
         });
 
+        if (!response.ok) {
+            console.error("OpenAI API Error:", await response.text());
+            return res.status(500).json({ success: false, message: 'Error calling OpenAI API' });
+        }
+
         const data = await response.json();
-        const aiAnswer = data.choices[0]?.message?.content;
+        console.log("OpenAI API Response:", JSON.stringify(data, null, 2));
+
+        const aiAnswer = data.choices && data.choices[0] && data.choices[0].message && data.choices[0].message.content;
 
         if (!aiAnswer) {
-            console.log("AI did not return a response.");
-            return res.status(500).json({ success: false, message: 'AI did not return a response' });
+            console.log("AI did not return a valid response.");
+            return res.status(500).json({ success: false, message: 'AI did not return a valid response' });
         }
 
         // Return the AI response
