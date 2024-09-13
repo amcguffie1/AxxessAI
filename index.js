@@ -2,11 +2,14 @@
 const express = require('express');
 const mongoose = require('mongoose');
 const cors = require('cors');
-const fetch = require('node-fetch');
+const fetch = (...args) => import('node-fetch').then(({ default: fetch }) => fetch(...args));
 const dotenv = require('dotenv');
 
 // Initialize environment variables
 dotenv.config();
+
+// MongoDB connection string with the dbname and password included
+const mongoURI = 'mongodb+srv://austin:yt469t9RPA55JZTx@cluster1.kzl6h.mongodb.net/AxxessAI?retryWrites=true&w=majority';
 
 // Create the app
 const app = express();
@@ -14,22 +17,19 @@ app.use(cors());
 app.use(express.json());
 
 // MongoDB connection
-const mongoURI = 'mongodb+srv://austin:yt469t9RPA55JZTx@cluster1.kzl6h.mongodb.net/?retryWrites=true&w=majority&appName=Cluster1';
 console.log("Attempting to connect to MongoDB...");
 mongoose.connect(mongoURI, { useNewUrlParser: true, useUnifiedTopology: true })
     .then(() => console.log("Connected to MongoDB"))
     .catch(err => console.error("MongoDB connection error:", err));
 
-// Define the document schema
+// Define the document schema and model
 const documentSchema = new mongoose.Schema({
     title: String,
     content: String
 });
-
-// Create the document model
 const Document = mongoose.model('Document', documentSchema);
 
-// POST API for querying AI with flexibility for all documents and context
+// POST API for querying AI with flexibility for all documents
 app.post('/api/query', async (req, res) => {
     const { question } = req.body;
     try {
@@ -61,7 +61,7 @@ app.post('/api/query', async (req, res) => {
 
         const data = await response.json();
         const aiAnswer = data.choices[0]?.message?.content;
-        
+
         if (!aiAnswer) {
             return res.status(500).json({ success: false, message: 'AI did not return a response' });
         }
