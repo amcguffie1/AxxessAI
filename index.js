@@ -12,8 +12,8 @@ const app = express();
 app.use(cors());
 app.use(express.json());
 
-// MongoDB connection with correct database name and collection
-const mongoURI = 'mongodb+srv://austin:yt469t9RPA55JZTx@cluster1.kzl6h.mongodb.net/Axxess_AI?retryWrites=true&w=majority';
+// MongoDB connection with correct database name and connection string
+const mongoURI = 'mongodb+srv://austin:yt469t9RPA55JZTx@cluster1.kzl6h.mongodb.net/Axxess_AI?retryWrites=true&w=majority&appName=Cluster1';
 console.log("Attempting to connect to MongoDB...");
 mongoose.connect(mongoURI, {
     useNewUrlParser: true,
@@ -26,10 +26,22 @@ mongoose.connect(mongoURI, {
 const documentSchema = new mongoose.Schema({
     title: String,
     content: String
-}, { collection: 'MA Plans 2024' }); // Correct collection name here
+}, { collection: 'MA Plans 2024' }); // Correct collection name
 
 // Create the document model
 const Document = mongoose.model('Document', documentSchema);
+
+// Helper function to map interchangeable terms (synonyms)
+function normalizeQuestion(question) {
+    const synonymMap = {
+        'food': 'grocery',
+        'groceries': 'grocery',
+        'meal': 'food',
+        'nutrition': 'food'
+    };
+
+    return question.replace(/\b(food|groceries|meal|nutrition)\b/g, match => synonymMap[match] || match);
+}
 
 // Root route handler for GET "/"
 app.get('/', (req, res) => {
@@ -38,9 +50,13 @@ app.get('/', (req, res) => {
 
 // POST API for querying AI
 app.post('/api/query', async (req, res) => {
-    const { question } = req.body;
+    let { question } = req.body;
 
     try {
+        // Normalize the question to handle interchangeable terms
+        question = normalizeQuestion(question);
+        console.log('Normalized question:', question);
+
         // Log message for debugging
         console.log('Querying MongoDB for documents...');
 
@@ -60,7 +76,7 @@ app.post('/api/query', async (req, res) => {
         // Log combined content for debugging
         console.log('Combined content:', combinedContent);
 
-        // Prepare the request to OpenAI with context consideration
+        // Prepare the request to OpenAI with context consideration and synonym mapping
         const response = await fetch('https://api.openai.com/v1/chat/completions', {
             method: 'POST',
             headers: {
@@ -70,7 +86,7 @@ app.post('/api/query', async (req, res) => {
             body: JSON.stringify({
                 model: 'gpt-3.5-turbo',
                 messages: [
-                    { role: 'system', content: "You are an AI assistant that has access to Medicare Advantage plan documents. Answer confidently, but if there isn't enough information from the user's query, ask for clarification and use context clues to guide the conversation." },
+                    { role: 'system', content: "You are an AI assistant that has access to Medicare Advantage plan documents. Please use context clues and handle interchangeable terms like 'food', 'grocery', 'meal', and 'nutrition' as synonyms. Answer confidently based on the provided plan documents." },
                     { role: 'system', content: `Here is the combined content from all available plan documents: ${combinedContent}` },
                     { role: 'user', content: `Answer the following question: ${question}` }
                 ]
