@@ -13,7 +13,7 @@ app.use(cors());
 app.use(express.json());
 
 // MongoDB connection
-const mongoURI = 'mongodb+srv://austin:yt469t9RPA55JZTx@cluster1.kzl6h.mongodb.net/AxxessAI?retryWrites=true&w=majority';
+const mongoURI = 'mongodb+srv://austin:yt469t9RPA55JZTx@cluster1.kzl6h.mongodb.net/?retryWrites=true&w=majority';
 console.log("Attempting to connect to MongoDB...");
 mongoose.connect(mongoURI, {
     useNewUrlParser: true,
