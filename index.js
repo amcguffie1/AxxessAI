@@ -119,7 +119,7 @@ app.post('/api/query', async (req, res) => {
             body: JSON.stringify({
                 model: 'gpt-3.5-turbo',
                 messages: [
-                    { role: 'system', content: "You are an AI assistant that has access to Medicare Advantage plan documents. Answer questions based on the provided information. If the specific information isn't available in the given context, say so clearly." },
+                    { role: 'system', content: "You are an AI assistant that has access to Medicare Advantage plan documents. Answer questions based on the provided information. If the specific information isn't available in the given context, say so clearly. When dealing with the plan formulary, understand that all medications listed in the formulary are covered by the plan. Each medication in the formulary has a tier indicator next to it, which specifies the tier of the drug. Use this information to answer questions about drug coverage and tiers." },
                     { role: 'user', content: `Here is the relevant content from the documents: ${combinedContent}` },
                     { role: 'user', content: `Answer the following question: ${question}` }
                 ]
