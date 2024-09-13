@@ -22,7 +22,30 @@ const documentSchema = new mongoose.Schema({
     content: Object
 });
 
+// Add text index to the schema
+documentSchema.index({ 'content.full_text': 'text', 'Title': 'text' });
+
 const Document = mongoose.model('Document', documentSchema, 'MA Plans 2024'); // Explicitly set the collection name
+
+// Helper function to chunk text
+const TOKEN_LIMIT = 4000; // Approximate token limit, leaving room for the system message and user question
+
+function chunkText(text, maxLength) {
+    const chunks = [];
+    let chunk = '';
+    const sentences = text.split(/(?<=[.!?])\s+/);
+    
+    for (let sentence of sentences) {
+        if ((chunk + sentence).length <= maxLength) {
+            chunk += sentence + ' ';
+        } else {
+            chunks.push(chunk.trim());
+            chunk = sentence + ' ';
+        }
+    }
+    if (chunk) chunks.push(chunk.trim());
+    return chunks;
+}
 
 // POST API for querying AI with MongoDB and OpenAI
 const app = express();
@@ -35,21 +58,28 @@ app.post('/api/query', async (req, res) => {
     try {
         console.log("Normalized question:", question);
 
-        // Fetch all documents from MongoDB collection
-        console.log("Querying MongoDB for documents...");
-        const documents = await Document.find({});
+        // Fetch relevant documents from MongoDB collection
+        console.log("Querying MongoDB for relevant documents...");
+        const documents = await Document.find(
+            { $text: { $search: question } },
+            { score: { $meta: "textScore" } }
+        ).sort({ score: { $meta: "textScore" } }).limit(5);
 
         if (!documents || documents.length === 0) {
-            console.log("No documents found in the database.");
-            return res.status(404).json({ success: false, message: 'No documents available in the database.' });
+            console.log("No relevant documents found in the database.");
+            return res.status(404).json({ success: false, message: 'No relevant documents available in the database.' });
         }
 
-        console.log(`Documents retrieved: ${documents.length}`);
+        console.log(`Relevant documents retrieved: ${documents.length}`);
 
-        // Combine all documents into a single text block for the OpenAI query
-        const combinedContent = documents.map(doc => doc.content.full_text || doc.content).join('\n');
-        console.log("Combined content length:", combinedContent.length);
-        console.log("Combined content ready for OpenAI API.");
+        // Combine relevant documents into chunks
+        let combinedContent = documents.map(doc => doc.content.full_text || doc.content).join('\n');
+        const chunks = chunkText(combinedContent, TOKEN_LIMIT);
+        console.log(`Created ${chunks.length} chunks of content`);
+
+        // Use the first chunk (most relevant) for the OpenAI query
+        const contentForQuery = chunks[0];
+        console.log("Content length for OpenAI API:", contentForQuery.length);
 
         // Prepare the request to OpenAI API
         const response = await fetch('https://api.openai.com/v1/chat/completions', {
@@ -62,7 +92,7 @@ app.post('/api/query', async (req, res) => {
                 model: 'gpt-3.5-turbo',
                 messages: [
                     { role: 'system', content: "You are an AI assistant that has access to Medicare Advantage plan documents. Answer confidently, but if there isn't enough information from the user's query, ask for clarification and use context clues to guide the conversation." },
-                    { role: 'user', content: `Here is the combined content from all available documents: ${combinedContent}` },
+                    { role: 'user', content: `Here is the relevant content from the documents: ${contentForQuery}` },
                     { role: 'user', content: `Answer the following question: ${question}` }
                 ]
             })
