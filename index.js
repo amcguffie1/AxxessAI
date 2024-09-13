@@ -22,11 +22,11 @@ mongoose.connect(mongoURI, {
     .then(() => console.log("Connected to MongoDB"))
     .catch(err => console.error("MongoDB connection error:", err));
 
-// Define the document schema and set the collection name to "MA Plans 2024"
+// Define the document schema and set the collection name to "MA_Plans_2024"
 const documentSchema = new mongoose.Schema({
     title: String,
     content: String
-}, { collection: 'MA Plans 2024' }); // Correct collection name
+}, { collection: 'MA_Plans_2024' }); // Correct collection name
 
 // Create the document model
 const Document = mongoose.model('Document', documentSchema);
@@ -60,7 +60,7 @@ app.post('/api/query', async (req, res) => {
         // Log message for debugging
         console.log('Querying MongoDB for documents...');
 
-        // Fetch all documents from the "MA Plans 2024" collection
+        // Fetch all documents from the "MA_Plans_2024" collection
         const documents = await Document.find({});
 
         // Log the retrieved documents for debugging
