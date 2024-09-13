@@ -12,8 +12,8 @@ const app = express();
 app.use(cors());
 app.use(express.json());
 
-// MongoDB connection
-const mongoURI = 'mongodb+srv://austin:yt469t9RPA55JZTx@cluster1.kzl6h.mongodb.net/Axxess_AI?retryWrites=true&w=majority&appName=Cluster1';
+// MongoDB connection with correct database name and collection
+const mongoURI = 'mongodb+srv://austin:yt469t9RPA55JZTx@cluster1.kzl6h.mongodb.net/Axxess_AI?retryWrites=true&w=majority';
 console.log("Attempting to connect to MongoDB...");
 mongoose.connect(mongoURI, {
     useNewUrlParser: true,
@@ -22,11 +22,11 @@ mongoose.connect(mongoURI, {
     .then(() => console.log("Connected to MongoDB"))
     .catch(err => console.error("MongoDB connection error:", err));
 
-// Define the document schema
+// Define the document schema and set the collection name to "MA Plans 2024"
 const documentSchema = new mongoose.Schema({
     title: String,
     content: String
-});
+}, { collection: 'MA Plans 2024' }); // Correct collection name here
 
 // Create the document model
 const Document = mongoose.model('Document', documentSchema);
@@ -44,7 +44,7 @@ app.post('/api/query', async (req, res) => {
         // Log message for debugging
         console.log('Querying MongoDB for documents...');
 
-        // Fetch all documents from MongoDB
+        // Fetch all documents from the "MA Plans 2024" collection
         const documents = await Document.find({});
 
         // Log the retrieved documents for debugging
