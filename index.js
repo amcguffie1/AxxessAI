@@ -1,68 +1,55 @@
-// Import necessary modules
 const express = require('express');
 const mongoose = require('mongoose');
-const cors = require('cors');
 const fetch = require('node-fetch');
 const dotenv = require('dotenv');
 
-// Initialize environment variables
 dotenv.config();
 
 // MongoDB connection
-const mongoURI = process.env.MONGO_URI || 'mongodb+srv://austin:yt469t9RPA55JZTx@cluster1.kzl6h.mongodb.net/Axxess_AI?retryWrites=true&w=majority&appName=Cluster1';
-
-console.log("Attempting to connect to MongoDB...");
+const mongoURI = 'mongodb+srv://austin:yt469t9RPA55JZTx@cluster1.kzl6h.mongodb.net/Axxess_AI?retryWrites=true&w=majority';
 mongoose.connect(mongoURI, { useNewUrlParser: true, useUnifiedTopology: true })
-    .then(() => console.log("Connected to MongoDB"))
-    .catch(err => console.error("MongoDB connection error:", err));
+    .then(() => console.log('Connected to MongoDB'))
+    .catch(err => console.error('MongoDB connection error:', err));
 
-// Define the document schema and collection
-const documentSchema = new mongoose.Schema({
-    Title: String,
-    content: Object
+// Define the document schema
+const documentSchema = new mongoose.Schema({ 
+    title: String, 
+    content: String 
 });
+const Document = mongoose.model('Document', documentSchema);
 
-const Document = mongoose.model('Document', documentSchema, 'MA Plans 2024'); // Explicitly set the collection name
-
-// POST API for querying AI with MongoDB and OpenAI
-const app = express();
-app.use(cors());
-app.use(express.json());
-
+// POST API for querying AI with relevant document content
 app.post('/api/query', async (req, res) => {
     const { question } = req.body;
-
     try {
-        console.log("Normalized question:", question);
+        // Search MongoDB for multiple documents related to the user's query
+        console.log(`Searching for documents relevant to: ${question}`);
+        const relevantDocs = await Document.find({
+            $or: [
+                { content: { $regex: question, $options: 'i' } },
+                { title: { $regex: question, $options: 'i' } }
+            ]
+        }).limit(3);  // Fetch the top 3 most relevant documents
 
-        // Fetch all documents from MongoDB collection
-        console.log("Querying MongoDB for documents...");
-        const documents = await Document.find({});
-
-        if (!documents || documents.length === 0) {
-            console.log("No documents found in the database.");
-            return res.status(404).json({ success: false, message: 'No documents available in the database.' });
+        if (relevantDocs.length === 0) {
+            return res.status(404).json({ success: false, message: 'No relevant documents found in the database.' });
         }
 
-        console.log(`Documents retrieved: ${documents.length}`);
+        // Combine the content of the top 3 relevant documents
+        const combinedContent = relevantDocs.map(doc => doc.content).join('\n\n');
 
-        // Combine all documents into a single text block for the OpenAI query
-        const combinedContent = documents.map(doc => doc.content.full_text || doc.content).join('\n');
-        console.log("Combined content ready for OpenAI API.");
-
-        // Prepare the request to OpenAI API
+        // Prepare the request to OpenAI
         const response = await fetch('https://api.openai.com/v1/chat/completions', {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json',
-                'Authorization': `Bearer ${process.env.OPENAI_API_KEY}`
+                'Authorization': `Bearer ${process.env.OPENAI_API_KEY}`,
             },
             body: JSON.stringify({
                 model: 'gpt-3.5-turbo',
                 messages: [
-                    { role: 'system', content: "You are an AI assistant that has access to Medicare Advantage plan documents. Answer confidently, but if there isn't enough information from the user's query, ask for clarification and use context clues to guide the conversation." },
-                    { role: 'user', content: `Here is the combined content from all available documents: ${combinedContent}` },
-                    { role: 'user', content: `Answer the following question: ${question}` }
+                    { role: 'system', content: 'You are an AI assistant that provides answers about Medicare Advantage plans.' },
+                    { role: 'user', content: `Here is the combined content of relevant documents: ${combinedContent}. Please answer the following question: ${question}` }
                 ]
             })
         });
@@ -71,16 +58,15 @@ app.post('/api/query', async (req, res) => {
         const aiAnswer = data.choices[0]?.message?.content;
 
         if (!aiAnswer) {
-            console.log("AI did not return a response.");
             return res.status(500).json({ success: false, message: 'AI did not return a response' });
         }
 
         // Return the AI response
-        console.log("AI Response:", aiAnswer);
         res.json({ success: true, answer: aiAnswer });
+
     } catch (error) {
-        console.error("Error processing query:", error);
-        res.status(500).json({ success: false, message: 'An error occurred while processing your request.' });
+        console.error('Error processing query:', error);
+        res.status(500).json({ success: false, message: 'Error processing query' });
     }
 });
 
