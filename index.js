@@ -43,24 +43,26 @@ const Document = mongoose.model('Document', documentSchema, 'MA Plans 2024'); //
 function parseFormularyData(content) {
     try {
         const data = JSON.parse(content);
-        const drugInfo = data[0];
-        const tierInfo = data[1];
+        if (Array.isArray(data) && data.length >= 2) {
+            const drugInfo = data[0];
+            const tierInfo = data[1];
 
-        if (drugInfo && tierInfo) {
-            const fullText = drugInfo.text;
-            const tier = tierInfo.text;
+            if (drugInfo && tierInfo && drugInfo.text && tierInfo.text) {
+                const fullText = drugInfo.text;
+                const tier = tierInfo.text;
 
-            // Split the full text into drug name and dosages
-            const match = fullText.match(/^(.*?)\s(\d+\s*mg(?:,\s*\d+\s*mg)*)/);
-            if (match) {
-                const drugName = match[1].trim();
-                const dosages = match[2].split(',').map(d => d.trim());
+                // Split the full text into drug name and dosages
+                const match = fullText.match(/^(.*?)(\d+\s*mg(?:,\s*\d+\s*mg)*)/);
+                if (match) {
+                    const drugName = match[1].trim();
+                    const dosages = match[2].split(',').map(d => d.trim());
 
-                return {
-                    drugName,
-                    dosages,
-                    tier
-                };
+                    return {
+                        drugName,
+                        dosages,
+                        tier
+                    };
+                }
             }
         }
     } catch (error) {
@@ -169,6 +171,12 @@ app.post('/api/query', async (req, res) => {
         const combinedContent = topSegments.join('\n\n');
         console.log("Combined content length:", combinedContent.length);
 
+        // Truncate combined content if it's too long
+        const maxContentLength = 4000; // Adjust this value as needed
+        const truncatedContent = combinedContent.length > maxContentLength 
+            ? combinedContent.substring(0, maxContentLength) + "... (content truncated)"
+            : combinedContent;
+
         // Prepare the request to OpenAI API
         const response = await fetch('https://api.openai.com/v1/chat/completions', {
             method: 'POST',
@@ -180,7 +188,7 @@ app.post('/api/query', async (req, res) => {
                 model: 'gpt-3.5-turbo',
                 messages: [
                     { role: 'system', content: "You are an AI assistant that has access to Medicare Advantage plan documents and formulary data. The formulary data is structured as 'Drug: [drug name], Dosages: [list of dosages], Tier: [tier number]'. Answer questions based on this information. If a specific drug is mentioned in the question, focus on finding and using that drug's information. If the specific information isn't available in the given context, say so clearly." },
-                    { role: 'user', content: `Here is the relevant content from the documents: ${combinedContent}` },
+                    { role: 'user', content: `Here is the relevant content from the documents: ${truncatedContent}` },
                     { role: 'user', content: `Answer the following question: ${question}` }
                 ]
             })
