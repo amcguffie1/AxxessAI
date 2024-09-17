@@ -39,48 +39,17 @@ documentSchema.index({ 'content.full_text': 'text', 'Title': 'text' });
 
 const Document = mongoose.model('Document', documentSchema, 'MA Plans 2024'); // Explicitly set the collection name
 
-// Helper function to parse formulary data
-function parseFormularyData(content) {
-    try {
-        const data = JSON.parse(content);
-        if (Array.isArray(data) && data.length >= 2) {
-            const drugInfo = data[0];
-            const tierInfo = data[1];
-
-            if (drugInfo && tierInfo && drugInfo.text && tierInfo.text) {
-                const fullText = drugInfo.text;
-                const tier = tierInfo.text;
-
-                // Split the full text into drug name and dosages
-                const match = fullText.match(/^(.*?)(\d+\s*mg(?:,\s*\d+\s*mg)*)/);
-                if (match) {
-                    const drugName = match[1].trim();
-                    const dosages = match[2].split(',').map(d => d.trim());
-
-                    return {
-                        drugName,
-                        dosages,
-                        tier
-                    };
-                }
-            }
-        }
-    } catch (error) {
-        console.error("Error parsing formulary data:", error);
-    }
-    return null;
-}
-
 // Helper function to segment documents
 function segmentDocument(doc) {
     const segments = [];
-    let content = doc.content.full_text || JSON.stringify(doc.content);
+    let content = '';
 
-    // Check if content is formulary data
-    const formularyData = parseFormularyData(content);
-    if (formularyData) {
-        const { drugName, dosages, tier } = formularyData;
-        content = `Drug: ${drugName}\nDosages: ${dosages.join(', ')}\nTier: ${tier}`;
+    if (typeof doc.content === 'string') {
+        content = doc.content;
+    } else if (doc.content && doc.content.full_text) {
+        content = doc.content.full_text;
+    } else {
+        content = JSON.stringify(doc.content);
     }
 
     const lines = content.split('\n');
@@ -126,33 +95,29 @@ app.post('/api/query', async (req, res) => {
 
         // Enhance search terms
         const searchTerms = question.toLowerCase().split(' ')
-            .filter(word => word.length > 2)
-            .join(' ');
+            .filter(word => word.length > 2);
         
         // Add common benefit-related terms to improve search
-        const enhancedSearchTerms = `${searchTerms} benefit coverage allowance`;
+        const enhancedSearchTerms = [...searchTerms, 'benefit', 'coverage', 'allowance', 'premium', 'plan'];
         
         console.log("Enhanced search terms:", enhancedSearchTerms);
 
         // Fetch relevant documents from MongoDB collection
-        let documents = await Document.find(
-            { $text: { $search: enhancedSearchTerms } },
-            { score: { $meta: "textScore" } }
-        ).sort({ score: { $meta: "textScore" } }).limit(10);  // Increased from 5 to 10
-
-        if (documents.length === 0) {
-            console.log("No exact matches found. Trying a more lenient search...");
-            const regexPatterns = enhancedSearchTerms.split(' ').map(term => new RegExp(term, 'i'));
-            
-            documents = await Document.find({
-                $or: [
-                    { Title: { $in: regexPatterns } },
-                    { 'content': { $in: regexPatterns } }
-                ]
-            }).limit(10);
-        }
+        let documents = await Document.find({
+            $or: [
+                { $text: { $search: enhancedSearchTerms.join(' ') } },
+                { Title: { $in: enhancedSearchTerms.map(term => new RegExp(term, 'i')) } },
+                { 'content': { $in: enhancedSearchTerms.map(term => new RegExp(term, 'i')) } }
+            ]
+        }).limit(10);
 
         console.log(`Retrieved ${documents.length} documents`);
+
+        // Log document titles and a preview of their content
+        documents.forEach((doc, index) => {
+            console.log(`Document ${index + 1} Title:`, doc.Title);
+            console.log(`Document ${index + 1} Content Preview:`, JSON.stringify(doc.content).substring(0, 200));
+        });
 
         // Segment documents and select most relevant segments
         let allSegments = [];
@@ -164,18 +129,18 @@ app.post('/api/query', async (req, res) => {
         // Improved relevance scoring
         const scoredSegments = allSegments.map(segment => ({
             segment,
-            score: enhancedSearchTerms.split(' ').filter(term => segment.toLowerCase().includes(term)).length
+            score: enhancedSearchTerms.filter(term => segment.toLowerCase().includes(term)).length
         }));
 
         scoredSegments.sort((a, b) => b.score - a.score);
 
-        const topSegments = scoredSegments.slice(0, 7).map(item => item.segment);  // Increased from 5 to 7
+        const topSegments = scoredSegments.slice(0, 7).map(item => item.segment);
         
         const combinedContent = topSegments.join('\n\n');
         console.log("Combined content length:", combinedContent.length);
 
         // Truncate combined content if it's too long
-        const maxContentLength = 4000; // Adjust this value as needed
+        const maxContentLength = 4000;
         const truncatedContent = combinedContent.length > maxContentLength 
             ? combinedContent.substring(0, maxContentLength) + "... (content truncated)"
             : combinedContent;
