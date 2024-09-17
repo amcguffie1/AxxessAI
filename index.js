@@ -104,12 +104,10 @@ app.post('/api/query', async (req, res) => {
 
         // Fetch relevant documents from MongoDB collection
         let documents = await Document.find({
-            $or: [
-                { $text: { $search: enhancedSearchTerms.join(' ') } },
-                { Title: { $in: enhancedSearchTerms.map(term => new RegExp(term, 'i')) } },
-                { 'content': { $in: enhancedSearchTerms.map(term => new RegExp(term, 'i')) } }
-            ]
-        }).limit(10);
+            $text: { $search: enhancedSearchTerms.join(' ') }
+        }, {
+            score: { $meta: "textScore" }
+        }).sort({ score: { $meta: "textScore" } }).limit(10);
 
         console.log(`Retrieved ${documents.length} documents`);
 
