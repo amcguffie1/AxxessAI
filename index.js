@@ -39,6 +39,27 @@ documentSchema.index({ 'content.full_text': 'text', 'Title': 'text' });
 
 const Document = mongoose.model('Document', documentSchema, 'MA Plans 2024'); // Explicitly set the collection name
 
+// Helper function to extract formulary data
+function extractFormularyData(content) {
+    try {
+        const data = JSON.parse(content);
+        let extractedData = '';
+        data.forEach(item => {
+            if (item.data && Array.isArray(item.data)) {
+                item.data.forEach(row => {
+                    if (Array.isArray(row) && row.length > 0) {
+                        extractedData += row.map(cell => cell.text).join(' ') + '\n';
+                    }
+                });
+            }
+        });
+        return extractedData;
+    } catch (error) {
+        console.error("Error parsing formulary data:", error);
+        return content;
+    }
+}
+
 // Helper function to segment documents
 function segmentDocument(doc) {
     const segments = [];
@@ -51,6 +72,9 @@ function segmentDocument(doc) {
     } else {
         content = JSON.stringify(doc.content);
     }
+
+    // Extract formulary data if it's in JSON format
+    content = extractFormularyData(content);
 
     const lines = content.split('\n');
     let segment = `Title: ${doc.Title}\n`;
@@ -98,7 +122,7 @@ app.post('/api/query', async (req, res) => {
             .filter(word => word.length > 2);
         
         // Add common benefit-related terms to improve search
-        const enhancedSearchTerms = [...searchTerms, 'benefit', 'coverage', 'allowance', 'premium', 'plan'];
+        const enhancedSearchTerms = [...new Set([...searchTerms, 'benefit', 'coverage', 'allowance', 'premium', 'plan', 'formulary', 'drug', 'medication'])];
         
         console.log("Enhanced search terms:", enhancedSearchTerms);
 
@@ -114,7 +138,8 @@ app.post('/api/query', async (req, res) => {
         // Log document titles and a preview of their content
         documents.forEach((doc, index) => {
             console.log(`Document ${index + 1} Title:`, doc.Title);
-            console.log(`Document ${index + 1} Content Preview:`, JSON.stringify(doc.content).substring(0, 200));
+            const contentPreview = extractFormularyData(JSON.stringify(doc.content)).substring(0, 200);
+            console.log(`Document ${index + 1} Content Preview:`, contentPreview);
         });
 
         // Segment documents and select most relevant segments
