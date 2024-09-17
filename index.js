@@ -39,6 +39,65 @@ documentSchema.index({ 'content.full_text': 'text', 'Title': 'text' });
 
 const Document = mongoose.model('Document', documentSchema, 'MA Plans 2024'); // Explicitly set the collection name
 
+// Helper function to parse formulary data
+function parseFormularyData(content) {
+    try {
+        const data = JSON.parse(content);
+        const drugInfo = data[0];
+        const tierInfo = data[1];
+
+        if (drugInfo && tierInfo) {
+            const fullText = drugInfo.text;
+            const tier = tierInfo.text;
+
+            // Split the full text into drug name and dosages
+            const match = fullText.match(/^(.*?)\s(\d+\s*mg(?:,\s*\d+\s*mg)*)/);
+            if (match) {
+                const drugName = match[1].trim();
+                const dosages = match[2].split(',').map(d => d.trim());
+
+                return {
+                    drugName,
+                    dosages,
+                    tier
+                };
+            }
+        }
+    } catch (error) {
+        console.error("Error parsing formulary data:", error);
+    }
+    return null;
+}
+
+// Helper function to segment documents
+function segmentDocument(doc) {
+    const segments = [];
+    let content = doc.content.full_text || JSON.stringify(doc.content);
+
+    // Check if content is formulary data
+    const formularyData = parseFormularyData(content);
+    if (formularyData) {
+        const { drugName, dosages, tier } = formularyData;
+        content = `Drug: ${drugName}\nDosages: ${dosages.join(', ')}\nTier: ${tier}`;
+    }
+
+    const lines = content.split('\n');
+    let segment = `Title: ${doc.Title}\n`;
+    let segmentLength = segment.length;
+
+    for (const line of lines) {
+        if (segmentLength + line.length > 1000) {
+            segments.push(segment);
+            segment = `Title: ${doc.Title} (continued)\n`;
+            segmentLength = segment.length;
+        }
+        segment += line + '\n';
+        segmentLength += line.length + 1;
+    }
+    if (segment.length > 0) segments.push(segment);
+    return segments;
+}
+
 // Initialize Express app
 const app = express();
 app.use(cors());
@@ -74,7 +133,7 @@ app.post('/api/query', async (req, res) => {
         let documents = await Document.find(
             { $text: { $search: searchTerms } },
             { score: { $meta: "textScore" } }
-        ).sort({ score: { $meta: "textScore" } }).limit(10);  // Increased limit
+        ).sort({ score: { $meta: "textScore" } }).limit(5);
 
         if (documents.length === 0) {
             console.log("No exact matches found. Trying a more lenient search...");
@@ -85,28 +144,29 @@ app.post('/api/query', async (req, res) => {
                     { Title: { $in: regexPatterns } },
                     { 'content': { $in: regexPatterns } }
                 ]
-            }).limit(10);
+            }).limit(5);
         }
 
         console.log(`Retrieved ${documents.length} documents`);
-        documents.forEach((doc, index) => {
-            console.log(`Document ${index + 1} Title: ${doc.Title}`);
-            console.log(`Document ${index + 1} Content Preview: ${JSON.stringify(doc.content).substring(0, 200)}...`);
+
+        // Segment documents and select most relevant segments
+        let allSegments = [];
+        documents.forEach(doc => {
+            const segments = segmentDocument(doc);
+            allSegments = allSegments.concat(segments);
         });
 
-        if (documents.length === 0) {
-            return res.status(404).json({ success: false, message: 'No relevant documents found in the database.' });
-        }
+        // Simple relevance scoring (can be improved with more sophisticated methods)
+        const scoredSegments = allSegments.map(segment => ({
+            segment,
+            score: searchTerms.split(' ').filter(term => segment.toLowerCase().includes(term)).length
+        }));
 
-        // Combine relevant documents into a single text
-        let combinedContent = documents.map(doc => `Title: ${doc.Title}\n${JSON.stringify(doc.content)}`).join('\n\n');
+        scoredSegments.sort((a, b) => b.score - a.score);
+
+        const topSegments = scoredSegments.slice(0, 5).map(item => item.segment);
         
-        // Truncate combined content to 15,000 characters if it's longer
-        if (combinedContent.length > 15000) {
-            console.log("Combined content exceeds 15,000 characters. Truncating...");
-            combinedContent = combinedContent.substring(0, 15000);
-        }
-        
+        const combinedContent = topSegments.join('\n\n');
         console.log("Combined content length:", combinedContent.length);
 
         // Prepare the request to OpenAI API
@@ -119,7 +179,7 @@ app.post('/api/query', async (req, res) => {
             body: JSON.stringify({
                 model: 'gpt-3.5-turbo',
                 messages: [
-                    { role: 'system', content: "You are an AI assistant that has access to Medicare Advantage plan documents. Answer questions based on the provided information. If the specific information isn't available in the given context, say so clearly. When dealing with the plan formulary, understand that all medications listed in the formulary are covered by the plan. Each medication in the formulary has a tier indicator next to it, which specifies the tier of the drug. Use this information to answer questions about drug coverage and tiers." },
+                    { role: 'system', content: "You are an AI assistant that has access to Medicare Advantage plan documents and formulary data. The formulary data is structured as 'Drug: [drug name], Dosages: [list of dosages], Tier: [tier number]'. Answer questions based on this information. If a specific drug is mentioned in the question, focus on finding and using that drug's information. If the specific information isn't available in the given context, say so clearly." },
                     { role: 'user', content: `Here is the relevant content from the documents: ${combinedContent}` },
                     { role: 'user', content: `Answer the following question: ${question}` }
                 ]
