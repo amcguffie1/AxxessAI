@@ -129,24 +129,27 @@ app.post('/api/query', async (req, res) => {
             .filter(word => word.length > 2)
             .join(' ');
         
-        console.log("Search terms:", searchTerms);
+        // Add common benefit-related terms to improve search
+        const enhancedSearchTerms = `${searchTerms} benefit coverage allowance`;
+        
+        console.log("Enhanced search terms:", enhancedSearchTerms);
 
         // Fetch relevant documents from MongoDB collection
         let documents = await Document.find(
-            { $text: { $search: searchTerms } },
+            { $text: { $search: enhancedSearchTerms } },
             { score: { $meta: "textScore" } }
-        ).sort({ score: { $meta: "textScore" } }).limit(5);
+        ).sort({ score: { $meta: "textScore" } }).limit(10);  // Increased from 5 to 10
 
         if (documents.length === 0) {
             console.log("No exact matches found. Trying a more lenient search...");
-            const regexPatterns = searchTerms.split(' ').map(term => new RegExp(term, 'i'));
+            const regexPatterns = enhancedSearchTerms.split(' ').map(term => new RegExp(term, 'i'));
             
             documents = await Document.find({
                 $or: [
                     { Title: { $in: regexPatterns } },
                     { 'content': { $in: regexPatterns } }
                 ]
-            }).limit(5);
+            }).limit(10);
         }
 
         console.log(`Retrieved ${documents.length} documents`);
@@ -158,15 +161,15 @@ app.post('/api/query', async (req, res) => {
             allSegments = allSegments.concat(segments);
         });
 
-        // Simple relevance scoring (can be improved with more sophisticated methods)
+        // Improved relevance scoring
         const scoredSegments = allSegments.map(segment => ({
             segment,
-            score: searchTerms.split(' ').filter(term => segment.toLowerCase().includes(term)).length
+            score: enhancedSearchTerms.split(' ').filter(term => segment.toLowerCase().includes(term)).length
         }));
 
         scoredSegments.sort((a, b) => b.score - a.score);
 
-        const topSegments = scoredSegments.slice(0, 5).map(item => item.segment);
+        const topSegments = scoredSegments.slice(0, 7).map(item => item.segment);  // Increased from 5 to 7
         
         const combinedContent = topSegments.join('\n\n');
         console.log("Combined content length:", combinedContent.length);
@@ -187,9 +190,9 @@ app.post('/api/query', async (req, res) => {
             body: JSON.stringify({
                 model: 'gpt-3.5-turbo',
                 messages: [
-                    { role: 'system', content: "You are an AI assistant that has access to Medicare Advantage plan documents and formulary data. The formulary data is structured as 'Drug: [drug name], Dosages: [list of dosages], Tier: [tier number]'. Answer questions based on this information. If a specific drug is mentioned in the question, focus on finding and using that drug's information. If the specific information isn't available in the given context, say so clearly." },
+                    { role: 'system', content: "You are an AI assistant specializing in Medicare Advantage plans. You have access to plan documents and formulary data. Common benefits in these plans may include medical coverage, prescription drugs, dental, vision, hearing aids, over-the-counter (OTC) allowances, and special supplemental benefits like grocery or transportation allowances. Always reference the specific information provided in the document excerpts when answering. If the information isn't available in the given context, clearly state that and suggest where the user might find more details." },
                     { role: 'user', content: `Here is the relevant content from the documents: ${truncatedContent}` },
-                    { role: 'user', content: `Answer the following question: ${question}` }
+                    { role: 'user', content: `Answer the following question about the Medicare Advantage plan: ${question}` }
                 ]
             })
         });
