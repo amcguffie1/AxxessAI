@@ -39,60 +39,6 @@ documentSchema.index({ 'content.full_text': 'text', 'Title': 'text' });
 
 const Document = mongoose.model('Document', documentSchema, 'MA Plans 2024'); // Explicitly set the collection name
 
-// Helper function to extract formulary data
-function extractFormularyData(content) {
-    try {
-        const data = JSON.parse(content);
-        let extractedData = '';
-        data.forEach(item => {
-            if (item.data && Array.isArray(item.data)) {
-                item.data.forEach(row => {
-                    if (Array.isArray(row) && row.length > 0) {
-                        extractedData += row.map(cell => cell.text).join(' ') + '\n';
-                    }
-                });
-            }
-        });
-        return extractedData;
-    } catch (error) {
-        console.error("Error parsing formulary data:", error);
-        return content;
-    }
-}
-
-// Helper function to segment documents
-function segmentDocument(doc) {
-    const segments = [];
-    let content = '';
-
-    if (typeof doc.content === 'string') {
-        content = doc.content;
-    } else if (doc.content && doc.content.full_text) {
-        content = doc.content.full_text;
-    } else {
-        content = JSON.stringify(doc.content);
-    }
-
-    // Extract formulary data if it's in JSON format
-    content = extractFormularyData(content);
-
-    const lines = content.split('\n');
-    let segment = `Title: ${doc.Title}\n`;
-    let segmentLength = segment.length;
-
-    for (const line of lines) {
-        if (segmentLength + line.length > 1000) {
-            segments.push(segment);
-            segment = `Title: ${doc.Title} (continued)\n`;
-            segmentLength = segment.length;
-        }
-        segment += line + '\n';
-        segmentLength += line.length + 1;
-    }
-    if (segment.length > 0) segments.push(segment);
-    return segments;
-}
-
 // Initialize Express app
 const app = express();
 app.use(cors());
@@ -119,54 +65,49 @@ app.post('/api/query', async (req, res) => {
 
         // Enhance search terms
         const searchTerms = question.toLowerCase().split(' ')
-            .filter(word => word.length > 2);
+            .filter(word => word.length > 2)
+            .join(' ');
         
-        // Add common benefit-related terms to improve search
-        const enhancedSearchTerms = [...new Set([...searchTerms, 'benefit', 'coverage', 'allowance', 'premium', 'plan', 'formulary', 'drug', 'medication'])];
-        
-        console.log("Enhanced search terms:", enhancedSearchTerms);
+        console.log("Search terms:", searchTerms);
 
         // Fetch relevant documents from MongoDB collection
-        let documents = await Document.find({
-            $text: { $search: enhancedSearchTerms.join(' ') }
-        }, {
-            score: { $meta: "textScore" }
-        }).sort({ score: { $meta: "textScore" } }).limit(10);
+        let documents = await Document.find(
+            { $text: { $search: searchTerms } },
+            { score: { $meta: "textScore" } }
+        ).sort({ score: { $meta: "textScore" } }).limit(10);  // Increased limit
+
+        if (documents.length === 0) {
+            console.log("No exact matches found. Trying a more lenient search...");
+            const regexPatterns = searchTerms.split(' ').map(term => new RegExp(term, 'i'));
+            
+            documents = await Document.find({
+                $or: [
+                    { Title: { $in: regexPatterns } },
+                    { 'content': { $in: regexPatterns } }
+                ]
+            }).limit(10);
+        }
 
         console.log(`Retrieved ${documents.length} documents`);
-
-        // Log document titles and a preview of their content
         documents.forEach((doc, index) => {
-            console.log(`Document ${index + 1} Title:`, doc.Title);
-            const contentPreview = extractFormularyData(JSON.stringify(doc.content)).substring(0, 200);
-            console.log(`Document ${index + 1} Content Preview:`, contentPreview);
+            console.log(`Document ${index + 1} Title: ${doc.Title}`);
+            console.log(`Document ${index + 1} Content Preview: ${JSON.stringify(doc.content).substring(0, 200)}...`);
         });
 
-        // Segment documents and select most relevant segments
-        let allSegments = [];
-        documents.forEach(doc => {
-            const segments = segmentDocument(doc);
-            allSegments = allSegments.concat(segments);
-        });
+        if (documents.length === 0) {
+            return res.status(404).json({ success: false, message: 'No relevant documents found in the database.' });
+        }
 
-        // Improved relevance scoring
-        const scoredSegments = allSegments.map(segment => ({
-            segment,
-            score: enhancedSearchTerms.filter(term => segment.toLowerCase().includes(term)).length
-        }));
-
-        scoredSegments.sort((a, b) => b.score - a.score);
-
-        const topSegments = scoredSegments.slice(0, 7).map(item => item.segment);
+        // Combine relevant documents into a single text
+        let combinedContent = documents.map(doc => `Title: ${doc.Title}\n${JSON.stringify(doc.content)}`).join('\n\n');
         
-        const combinedContent = topSegments.join('\n\n');
+        // Truncate combined content to 15,000 characters if it's longer
+        if (combinedContent.length > 15000) {
+            console.log("Combined content exceeds 15,000 characters. Truncating...");
+            combinedContent = combinedContent.substring(0, 15000);
+        }
+        
         console.log("Combined content length:", combinedContent.length);
-
-        // Truncate combined content if it's too long
-        const maxContentLength = 4000;
-        const truncatedContent = combinedContent.length > maxContentLength 
-            ? combinedContent.substring(0, maxContentLength) + "... (content truncated)"
-            : combinedContent;
 
         // Prepare the request to OpenAI API
         const response = await fetch('https://api.openai.com/v1/chat/completions', {
@@ -178,9 +119,9 @@ app.post('/api/query', async (req, res) => {
             body: JSON.stringify({
                 model: 'gpt-3.5-turbo',
                 messages: [
-                    { role: 'system', content: "You are an AI assistant specializing in Medicare Advantage plans. You have access to plan documents and formulary data. Common benefits in these plans may include medical coverage, prescription drugs, dental, vision, hearing aids, over-the-counter (OTC) allowances, and special supplemental benefits like grocery or transportation allowances. Always reference the specific information provided in the document excerpts when answering. If the information isn't available in the given context, clearly state that and suggest where the user might find more details." },
-                    { role: 'user', content: `Here is the relevant content from the documents: ${truncatedContent}` },
-                    { role: 'user', content: `Answer the following question about the Medicare Advantage plan: ${question}` }
+                    { role: 'system', content: "You are an AI assistant that has access to Medicare Advantage plan documents. Answer questions based on the provided information. If the specific information isn't available in the given context, say so clearly. When dealing with the plan formulary, understand that all medications listed in the formulary are covered by the plan. Each medication in the formulary has a tier indicator next to it, which specifies the tier of the drug. Use this information to answer questions about drug coverage and tiers." },
+                    { role: 'user', content: `Here is the relevant content from the documents: ${combinedContent}` },
+                    { role: 'user', content: `Answer the following question: ${question}` }
                 ]
             })
         });
